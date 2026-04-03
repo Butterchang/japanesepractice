@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日本語文法トレーナー</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; }
+  body {
+    background: #0f1117;
+    color: #e8eaf0;
+    font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    min-height: 100vh;
+  }
+  #root { min-height: 100vh; }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  button:active { transform: scale(0.97); }
+  textarea {
+    font-family: inherit;
+    outline: none;
+  }
+  textarea:focus {
+    border-color: rgba(81,168,221,0.6) !important;
+    box-shadow: 0 0 0 3px rgba(81,168,221,0.12);
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0f1117; }
+  ::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+
+  .cat-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .cat-btn { transition: all 0.15s; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeIn 0.25s ease forwards; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .loading-pulse { animation: pulse 1.4s ease infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const D = {
+  bg: "#0f1117",
+  bgCard: "#1a1d27",
+  bgInput: "#13151e",
+  bgHover: "#20232f",
+  textPrimary: "#e8eaf0",
+  textSecondary: "#8b8fa8",
+  textMuted: "#555870",
+  border: "rgba(255,255,255,0.08)",
+  borderStrong: "rgba(255,255,255,0.14)",
+};
+
+const CATEGORIES = [
+  {
+    id: "passive", label: "受け身", sub: "被動語態", color: "#51A8DD", icon: "⇄",
+    questions: [
+      { id:"p1", prompt:"改成受け身形：「政府が賃金を調整する。」", hint:"主語を「賃金」にして被動形に", answer_guide:"賃金が政府によって調整される。" },
+      { id:"p2", prompt:"改成受け身形：「市場が価格を決める。」", hint:"〜によって／〜に + 被動形", answer_guide:"価格は市場によって決められる。" },
+      { id:"p3", prompt:"改成受け身形：「教授が学生を評価する。」", hint:"行為を受ける側を主語に", answer_guide:"学生は教授に評価される。" },
+      { id:"p4", prompt:"改成受け身形：「会社が従業員を解雇した。」", hint:"過去形の受け身", answer_guide:"従業員は会社に解雇された。" },
+      { id:"p5", prompt:"改成受け身形：「研究者がデータを分析する。」", hint:"データが主語になる形", answer_guide:"データは研究者によって分析される。" },
+    ]
+  },
+  {
+    id: "particle", label: "助詞", sub: "が・を・に・で・は", color: "#E8A838", icon: "の",
+    questions: [
+      { id:"pa1", prompt:"選填助詞：「最低賃金制度は労働者の生活（　）保障するうえで必要だ。」", hint:"保障する的對象用什麼助詞？", answer_guide:"を（「生活を保障する」— を表示動作的直接對象）" },
+      { id:"pa2", prompt:"選填助詞：「物価（　）インフレ（　）連動させるべきだ。」", hint:"並列 vs 動作對象", answer_guide:"「物価やインフレ」+「と連動させる」— 前者用や（並列），後者用と（連動的対象）" },
+      { id:"pa3", prompt:"選填助詞：「授業（　）受けながら仕事（　）しにくくなる。」", hint:"受ける、しにくい的助詞", answer_guide:"「授業を受けながら」「仕事がしにくくなる」— を（受ける的對象）、が（しにくい的主語）" },
+      { id:"pa4", prompt:"選填助詞：「この問題（　）経済学（　）観点から考える。」", hint:"〜の観点から", answer_guide:"「この問題を」「経済学の観点から」— を（考える的對象）、の（修飾観点）" },
+      { id:"pa5", prompt:"選填助詞：「学生（　）もちろん、社会人（　）とっても重要だ。」", hint:"〜としてもちろん vs 〜にとって", answer_guide:"「学生としてもちろん」「社会人にとっても」— として（身分）、にとって（立場から見て）" },
+    ]
+  },
+  {
+    id: "vocab", label: "語彙", sub: "易混淆漢字詞", color: "#7B6FD8", icon: "字",
+    questions: [
+      { id:"v1", prompt:"「差別」vs「格差」— 請各造一句說明差異", hint:"差別＝歧視；格差＝差距", answer_guide:"差別：「性別による差別は許されない。」（歧視）\n格差：「都市と地方の賃金格差が広がっている。」（差距）" },
+      { id:"v2", prompt:"「消費力」vs「購買力」— 哪個在日文中更自然？請造句。", hint:"日文常用語是哪個？", answer_guide:"「購買力」是標準日文用法。例：「消費者の購買力が低下している。」\n（「消費力」不自然，避免直接從中文轉換）" },
+      { id:"v3", prompt:"「機会費用」を使って一文書いてみよう。（機會成本）", hint:"ABS で学ぶことの機会費用を例に", answer_guide:"例：「ABSで学ぶことの機会費用には、失った労働収入が含まれる。」" },
+      { id:"v4", prompt:"「〜にもかかわらず」vs「〜のに」— 選出學術文章用語並造句。", hint:"學術論文用哪個？", answer_guide:"「〜にもかかわらず」最適合學術用途。例：「最低賃金が上昇したにもかかわらず、格差は縮小しなかった。」" },
+      { id:"v5", prompt:"「違いそう」vs「異なる」— 學術語境下哪個更適合？", hint:"〜そう表示推測，學術文章中要斷定", answer_guide:"「異なる」更適合學術文章。「違いそう」語氣太弱、過於口語。\n例：「都市と地方では物価が明らかに異なる。」" },
+    ]
+  },
+  {
+    id: "logic", label: "論点接続", sub: "因果・逆接・並列", color: "#4CAF7C", icon: "→",
+    questions: [
+      { id:"l1", prompt:"用「なぜなら〜からだ」改寫：「物価が違う。だから賃金も変えるべきだ。」", hint:"なぜなら → からだ 的結構", answer_guide:"「賃金を地域別に設定すべきだ。なぜなら、都市と地方では物価が大きく異なるからだ。」" },
+      { id:"l2", prompt:"用「〜ため、〜」改寫：「授業があるから仕事しにくい。」", hint:"ため前接動詞辞書形或名詞の", answer_guide:"「授業を受けるため、フルタイムの仕事をするのが難しくなる。」" },
+      { id:"l3", prompt:"以下哪個連接詞最適合學術論文逆接？\nA. でも　B. しかし　C. けど　D. だって", hint:"考慮正式程度", answer_guide:"B.「しかし」— 最適合書面學術語境。\n「だが」「一方で」也可。「でも」「けど」過於口語，「だって」是兒語。" },
+      { id:"l4", prompt:"用「〜一方で、〜」造一個關於最低賃金的句子。", hint:"一方で表示「另一方面」", answer_guide:"例：「最低賃金制度は労働者の生活を守る一方で、中小企業の経営を圧迫するという側面もある。」" },
+      { id:"l5", prompt:"補完這段論述的連接詞：「地域差は望ましい。（　）、生活費は地域によって大きく異なる。（　）、一律の賃金では実質的な格差が生じてしまう。」", hint:"第一個：理由；第二個：結論導出", answer_guide:"「なぜなら、生活費は地域によって大きく異なるからだ。したがって、一律の賃金では実質的な格差が生じてしまう。」" },
+    ]
+  },
+];
+
+const TODAY = new Date().toISOString().split("T")[0];
+
+function storage_get(key) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
+}
+function storage_set(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+async function getAIFeedback(question, userAnswer, category) {
+  const systemPrompt = `あなたは日本語文法の優秀な先生です。台湾人のN1保持者・MBA学生の答えを評価します。
+フィードバックは簡潔に：
+1. ✅ 正しい点（1〜2行）
+2. 🔧 改善点（あれば1〜2行）
+3. 💡 参考例文（1行）
+必ず日本語で回答。厳しすぎず、学習意欲を維持する温かいトーンで。100字以内が理想。`;
+  const userPrompt = `問題：${question.prompt}\n模範答え：${question.answer_guide}\n学習者の答え：${userAnswer}\nカテゴリ：${category.label}（${category.sub}）`;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      }),
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text || "フィードバックを取得できませんでした。";
+  } catch {
+    return "フィードバックを取得できませんでした。オフラインでも模範答えを参考にしてください。";
+  }
+}
+
+function App() {
+  const [screen, setScreen] = useState("home");
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [qIndex, setQIndex] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [feedback, setFeedback] = useState(null);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [todayDone, setTodayDone] = useState({});
+  const [streak, setStreak] = useState(0);
+  const [history, setHistory] = useState({});
+  const [showGuide, setShowGuide] = useState(false);
+
+  useEffect(() => {
+    const s = storage_get("jp_streak") || 0;
+    const d = storage_get("jp_done_" + TODAY) || {};
+    const h = storage_get("jp_history") || {};
+    setStreak(s);
+    setTodayDone(d);
+    setHistory(h);
+  }, []);
+
+  const saveProgress = useCallback((done) => {
+    storage_set("jp_done_" + TODAY, done);
+    const allCatsDone = CATEGORIES.every(c => done[c.id]);
+    const newHistory = { ...history, [TODAY]: Object.keys(done).length };
+    storage_set("jp_history", newHistory);
+    setHistory(newHistory);
+    if (allCatsDone) {
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      storage_set("jp_streak", newStreak);
+    }
+  }, [history, streak]);
+
+  const startCategory = (cat) => {
+    setActiveCategory(cat);
+    setQIndex(0);
+    setAnswer("");
+    setFeedback(null);
+    setShowGuide(false);
+    setScreen("drill");
+  };
+
+  const submitAnswer = async () => {
+    if (!answer.trim()) return;
+    setLoadingFeedback(true);
+    setFeedback(null);
+    const q = activeCategory.questions[qIndex];
+    const fb = await getAIFeedback(q, answer, activeCategory);
+    setFeedback(fb);
+    setLoadingFeedback(false);
+  };
+
+  const nextQuestion = () => {
+    if (qIndex + 1 < activeCategory.questions.length) {
+      setQIndex(qIndex + 1);
+      setAnswer("");
+      setFeedback(null);
+      setShowGuide(false);
+    } else {
+      const newDone = { ...todayDone, [activeCategory.id]: true };
+      setTodayDone(newDone);
+      saveProgress(newDone);
+      setScreen("complete");
+    }
+  };
+
+  const totalDoneToday = Object.keys(todayDone).length;
+  const allDoneToday = totalDoneToday === CATEGORIES.length;
+
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const key = d.toISOString().split("T")[0];
+    return { key, count: history[key] || 0, isToday: key === TODAY };
+  });
+
+  // ── COMPLETE SCREEN ──
+  if (screen === "complete") {
+    return (
+      <div style={{ background: D.bg, minHeight: "100vh", padding: "2rem 1.5rem" }}>
+        <div style={{ maxWidth: 480, margin: "0 auto" }} className="fade-in">
+          <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🎌</div>
+            <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 6, color: D.textPrimary }}>{activeCategory.label} 完了！</h2>
+            <p style={{ fontSize: 14, color: D.textSecondary }}>{activeCategory.sub} の練習が終わりました</p>
+          </div>
+
+          <div style={{ background: D.bgCard, border: `1px solid ${activeCategory.color}30`, borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
+            <p style={{ fontSize: 13, color: D.textMuted, marginBottom: 10 }}>今日の進捗</p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              {CATEGORIES.map(c => (
+                <div key={c.id} style={{ flex: 1 }}>
+                  <div style={{ height: 8, borderRadius: 4, background: todayDone[c.id] ? c.color : D.border }} />
+                  <div style={{ fontSize: 10, color: todayDone[c.id] ? c.color : D.textMuted, marginTop: 5, textAlign: "center" }}>{c.label}</div>
+                </div>
+              ))}
+            </div>
+            <p style={{ fontSize: 13, color: D.textSecondary }}>
+              {totalDoneToday} / {CATEGORIES.length} カテゴリ完了
+              {allDoneToday && <span style={{ color: "#51A8DD" }}> 🔥 今日の目標達成！</span>}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setScreen("home")}
+              style={{ flex: 1, padding: "11px", fontSize: 14, background: D.bgCard, color: D.textPrimary, border: `0.5px solid ${D.borderStrong}`, borderRadius: 10 }}>
+              ホームへ
+            </button>
+            {!allDoneToday && (
+              <button onClick={() => setScreen("home")}
+                style={{ flex: 2, padding: "11px", fontSize: 14, background: activeCategory.color, color: "#fff", border: "none", borderRadius: 10, fontWeight: 500 }}>
+                次のカテゴリへ →
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── DRILL SCREEN ──
+  if (screen === "drill" && activeCategory) {
+    const q = activeCategory.questions[qIndex];
+    const progress = (qIndex / activeCategory.questions.length) * 100;
+
+    return (
+      <div style={{ background: D.bg, minHeight: "100vh", padding: "1.5rem" }}>
+        <div style={{ maxWidth: 560, margin: "0 auto" }} className="fade-in">
+
+          {/* Top bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1.5rem" }}>
+            <button onClick={() => setScreen("home")}
+              style={{ fontSize: 13, padding: "5px 12px", border: `0.5px solid ${D.borderStrong}`, background: D.bgCard, color: D.textSecondary, borderRadius: 8 }}>
+              ← 戻る
+            </button>
+            <div style={{ flex: 1, height: 4, background: D.border, borderRadius: 2 }}>
+              <div style={{ width: progress + "%", height: "100%", background: activeCategory.color, borderRadius: 2, transition: "width 0.4s ease" }} />
+            </div>
+            <span style={{ fontSize: 12, color: D.textMuted, whiteSpace: "nowrap" }}>{qIndex + 1} / {activeCategory.questions.length}</span>
+          </div>
+
+          {/* Category badge */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+            <span style={{ fontSize: 12, padding: "4px 12px", borderRadius: 20, background: `${activeCategory.color}18`, color: activeCategory.color, border: `1px solid ${activeCategory.color}40` }}>
+              {activeCategory.label}
+            </span>
+            <span style={{ fontSize: 12, color: D.textMuted }}>{activeCategory.sub}</span>
+          </div>
+
+          {/* Question */}
+          <div style={{ background: D.bgCard, border: `0.5px solid ${D.border}`, borderRadius: 14, padding: "1.25rem", marginBottom: "1.25rem" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.9, margin: 0, color: D.textPrimary, whiteSpace: "pre-line" }}>{q.prompt}</p>
+          </div>
+
+          {/* Answer area */}
+          <div style={{ marginBottom: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <label style={{ fontSize: 13, color: D.textSecondary }}>あなたの答え</label>
+              <button onClick={() => setShowGuide(!showGuide)}
+                style={{ fontSize: 12, color: activeCategory.color, background: "none", border: "none", padding: 0 }}>
+                {showGuide ? "ヒントを隠す" : `💡 ヒント`}
+              </button>
+            </div>
+            {showGuide && (
+              <div style={{ fontSize: 13, color: D.textSecondary, background: `${activeCategory.color}12`, border: `1px solid ${activeCategory.color}30`, borderRadius: 8, padding: "9px 13px", marginBottom: 10, lineHeight: 1.7 }}>
+                {q.hint}
+              </div>
+            )}
+            <textarea
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              placeholder="ここに答えを入力..."
+              rows={3}
+              style={{ width: "100%", fontSize: 15, lineHeight: 1.7, resize: "vertical", background: D.bgInput, color: D.textPrimary, border: `0.5px solid ${D.borderStrong}`, borderRadius: 10, padding: "11px 13px" }}
+            />
+          </div>
+
+          {/* Submit */}
+          {!feedback && (
+            <button onClick={submitAnswer} disabled={!answer.trim() || loadingFeedback}
+              style={{ width: "100%", padding: "12px", fontSize: 15, background: answer.trim() && !loadingFeedback ? activeCategory.color : D.bgCard, color: answer.trim() && !loadingFeedback ? "#fff" : D.textMuted, border: `0.5px solid ${answer.trim() ? activeCategory.color : D.border}`, borderRadius: 10, fontWeight: 500, opacity: answer.trim() ? 1 : 0.5 }}>
+              {loadingFeedback ? <span className="loading-pulse">採点中...</span> : "答えを送信"}
+            </button>
+          )}
+
+          {/* Feedback */}
+          {feedback && (
+            <div className="fade-in">
+              <div style={{ background: D.bgCard, border: `0.5px solid ${D.borderStrong}`, borderRadius: 14, padding: "1.25rem", marginBottom: "1rem" }}>
+                <p style={{ fontSize: 12, color: D.textMuted, marginBottom: 10, fontWeight: 500, letterSpacing: "0.05em" }}>AI フィードバック</p>
+                <p style={{ fontSize: 14, lineHeight: 1.85, marginBottom: 14, whiteSpace: "pre-line", color: D.textPrimary }}>{feedback}</p>
+                <div style={{ borderTop: `0.5px solid ${D.border}`, paddingTop: 12 }}>
+                  <p style={{ fontSize: 12, color: D.textMuted, marginBottom: 6 }}>模範答え</p>
+                  <p style={{ fontSize: 13, lineHeight: 1.85, margin: 0, color: D.textSecondary, whiteSpace: "pre-line" }}>{q.answer_guide}</p>
+                </div>
+              </div>
+              <button onClick={nextQuestion}
+                style={{ width: "100%", padding: "12px", fontSize: 15, background: activeCategory.color, color: "#fff", border: "none", borderRadius: 10, fontWeight: 500 }}>
+                {qIndex + 1 < activeCategory.questions.length ? "次の問題 →" : "完了 🎉"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── HOME SCREEN ──
+  return (
+    <div style={{ background: D.bg, minHeight: "100vh", padding: "1.5rem" }}>
+      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: D.textPrimary, letterSpacing: "-0.01em" }}>日本語文法トレーナー</h1>
+            <p style={{ fontSize: 13, color: D.textMuted }}>
+              {new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 24, fontWeight: 700, color: "#51A8DD", lineHeight: 1.1 }}>🔥 {streak}</div>
+            <div style={{ fontSize: 11, color: D.textMuted, marginTop: 2 }}>日連続</div>
+          </div>
+        </div>
+
+        {/* Progress card */}
+        <div style={{ background: D.bgCard, borderRadius: 14, padding: "1.1rem 1.25rem", marginBottom: "1.25rem", border: `0.5px solid ${D.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontSize: 13, color: D.textSecondary }}>今日の進捗</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: allDoneToday ? "#51A8DD" : D.textPrimary }}>
+              {totalDoneToday} / {CATEGORIES.length} {allDoneToday && "✓"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            {CATEGORIES.map(c => (
+              <div key={c.id} style={{ flex: 1 }}>
+                <div style={{ height: 5, borderRadius: 3, background: todayDone[c.id] ? c.color : D.border, transition: "background 0.3s" }} />
+                <div style={{ fontSize: 10, color: todayDone[c.id] ? c.color : D.textMuted, marginTop: 5, textAlign: "center" }}>{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 7-day bar chart */}
+          <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 36 }}>
+            {last7.map(d => (
+              <div key={d.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, height: "100%", justifyContent: "flex-end" }}>
+                <div style={{
+                  width: "100%",
+                  height: Math.max(4, (d.count / CATEGORIES.length) * 24) + "px",
+                  borderRadius: 3,
+                  background: d.count > 0 ? (d.count >= CATEGORIES.length ? "#51A8DD" : "#51A8DD50") : D.border,
+                  outline: d.isToday ? "1.5px solid #51A8DD" : "none",
+                  outlineOffset: "1px",
+                }} />
+                <span style={{ fontSize: 10, color: d.isToday ? "#51A8DD" : D.textMuted }}>
+                  {new Date(d.key + "T00:00:00").toLocaleDateString("ja-JP", { weekday: "narrow" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Category grid */}
+        <p style={{ fontSize: 13, color: D.textMuted, marginBottom: 10 }}>カテゴリを選んで練習</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: "1.25rem" }}>
+          {CATEGORIES.map(cat => {
+            const done = todayDone[cat.id];
+            return (
+              <button key={cat.id} className="cat-btn" onClick={() => startCategory(cat)}
+                style={{
+                  background: done ? `${cat.color}14` : D.bgCard,
+                  border: done ? `1px solid ${cat.color}50` : `0.5px solid ${D.borderStrong}`,
+                  borderRadius: 14, padding: "1rem 1rem 0.875rem", textAlign: "left",
+                  position: "relative", display: "block"
+                }}>
+                {done && <span style={{ position: "absolute", top: 10, right: 12, fontSize: 13, color: cat.color }}>✓</span>}
+                <div style={{ fontSize: 22, marginBottom: 8, color: cat.color }}>{cat.icon}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: D.textPrimary, marginBottom: 3 }}>{cat.label}</div>
+                <div style={{ fontSize: 12, color: D.textMuted, marginBottom: 8 }}>{cat.sub}</div>
+                <div style={{ fontSize: 11, color: cat.color }}>{cat.questions.length}問 {done ? "（完了）" : "→"}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tips */}
+        <div style={{ background: D.bgCard, borderRadius: 12, padding: "0.875rem 1rem", border: `0.5px solid ${D.border}` }}>
+          <p style={{ fontSize: 12, color: D.textMuted, marginBottom: 8, fontWeight: 500, letterSpacing: "0.04em" }}>今週の重点ポイント</p>
+          {[
+            "受け身形（〜される）を積極的に使う",
+            "差別 → 格差 に言い換える",
+            "なぜなら〜からだ の構造を固める",
+          ].map((tip, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: i > 0 ? `0.5px solid ${D.border}` : "none" }}>
+              <span style={{ color: "#51A8DD", fontSize: 12, flexShrink: 0 }}>→</span>
+              <span style={{ fontSize: 13, color: D.textSecondary, lineHeight: 1.5 }}>{tip}</span>
+            </div>
+          ))}
+        </div>
+
+        <p style={{ fontSize: 11, color: D.textMuted, textAlign: "center", marginTop: "1.5rem" }}>
+          進捗はブラウザに保存されます
+        </p>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
